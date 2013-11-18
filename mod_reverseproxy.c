@@ -56,7 +56,7 @@ typedef struct {
      *  with the most commonly encountered listed first
      */
 
-    int deny_all;
+    //int deny_all;
     /** If this flag is set, only allow requests which originate from a CF Trusted Proxy IP.
      * Return 403 otherwise.
      */
@@ -262,18 +262,6 @@ static int reverseproxy_modify_connection(request_rec *r)
         }
     }
 
-    /* Deny requests that do not have a CloudFlareRemoteIPHeader set when
-     * DenyAllButCloudFlare is set. Do not modify the request otherwise and
-     * return early.
-     */
-    if (!remote) {
-        if (config->deny_all) {
-            return 403;
-        }
-
-        return OK;
-    }
-
     remote = apr_pstrdup(r->pool, remote);
 
 #if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
@@ -316,13 +304,6 @@ static int reverseproxy_modify_connection(request_rec *r)
                     break;
                 }
 #endif
-            }
-            if (i && i >= config->proxymatch_ip->nelts) {
-                if (config->deny_all) {
-                    return 403;
-                } else {
-                    break;
-                }
             }
         }
 
