@@ -33,4 +33,4 @@ ReverseProxyRemoteIPTrusted 46.105.160.192
 
 NOTES:
 
-- If mod\_cloudflare or mod\_remoteip are already loaded on the same web server, the server will crash because both modules try to set the remote IP to a different value.
+- If mod\_cloudflare or mod\_remoteip are already loaded on the same web server, the web server will crash because both modules try to set the remote IP to a different value.
