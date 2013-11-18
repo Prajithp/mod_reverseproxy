@@ -12,6 +12,8 @@ To install, follow the instructions on:
    ```
 ## Configuration Directives ##
 ```bash
+ReverseProxyEnable           (On|Off)          - Enable reverse proxy
+
 ReverseProxyRemoteIPHeader   X-Real-IP         - The header to use for the real IP
                                                  address.
 ReverseProxyRemoteIPTrusted  127.0.0.1         -  What IPs to adjust requests for
@@ -23,9 +25,10 @@ ReverseProxyRemoteIPTrusted  127.0.0.1         -  What IPs to adjust requests fo
 LoadModule reverseproxy_module modules/mod_reverseproxy.so
 
 <IfModule reverseproxy_module>
-ReverseProxyRemoteIPHeader X-Real-IP
-ReverseProxyRemoteIPTrusted 127.0.0.1
-ReverseProxyRemoteIPTrusted 46.105.160.192
+  ReverseProxyEnable  On
+  ReverseProxyRemoteIPHeader X-Real-IP
+  ReverseProxyRemoteIPTrusted 127.0.0.1
+  ReverseProxyRemoteIPTrusted 46.105.160.192
 </IfModule>
 
 ```

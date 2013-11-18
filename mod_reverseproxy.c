@@ -55,7 +55,8 @@ typedef struct {
     /** A list of trusted proxies, ideally configured
      *  with the most commonly encountered listed first
      */
-
+    
+     int  enable_module;
     //int deny_all;
     /** If this flag is set, only allow requests which originate from a CF Trusted Proxy IP.
      * Return 403 otherwise.
@@ -92,6 +93,7 @@ static void *create_reverseproxy_server_config(apr_pool_t *p, server_rec *s)
     if (set_cf_default_proxies(p, config) != APR_SUCCESS) {
         return NULL;
     }
+    config->enable_module = 0;
     config->header_name = AB_DEFAULT_IP_HEADER;
     return config;
 }
@@ -122,6 +124,13 @@ static const char *header_name_set(cmd_parms *cmd, void *dummy,
     reverseproxy_config_t *config = ap_get_module_config(cmd->server->module_config,
                                                        &reverseproxy_module);
     config->header_name = apr_pstrdup(cmd->pool, arg);
+    return NULL;
+}
+
+static const char *reveseproxy_enable(cmd_parms *cmd, void *dummy, int flag) {
+    reverseproxy_config_t *config = ap_get_module_config(cmd->server->module_config,
+                                                      &reverseproxy_module);
+    config->enable_module = flag;
     return NULL;
 }
 
@@ -225,6 +234,8 @@ static int reverseproxy_modify_connection(request_rec *r)
     conn_rec *c = r->connection;
     reverseproxy_config_t *config = (reverseproxy_config_t *)
         ap_get_module_config(r->server->module_config, &reverseproxy_module);
+    if (!config->enable_module)
+        return DECLINED;
 
     reverseproxy_conn_t *conn;
 #ifdef REMOTEIP_OPTIMIZED
@@ -510,6 +521,8 @@ ditto_request_rec:
 
 static const command_rec reverseproxy_cmds[] =
 {
+    AP_INIT_FLAG("ReverseProxyEnable", reveseproxy_enable, NULL, RSRC_CONF,
+                 "Enable mod_reverseproxy"),
     AP_INIT_TAKE1("ReverseProxyRemoteIPHeader", header_name_set, NULL, RSRC_CONF,
                   "Specifies a request header to trust as the client IP, "
                   "Overrides the default one"),
