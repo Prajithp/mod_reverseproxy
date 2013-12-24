@@ -57,9 +57,9 @@ typedef struct {
      */
     
      int  enable_module;
-    //int deny_all;
-    /** If this flag is set, only allow requests which originate from a CF Trusted Proxy IP.
-     * Return 403 otherwise.
+    
+    /** 
+     * you can trun off or turn on this module by using this directive.
      */
     apr_array_header_t *proxymatch_ip;
 } reverseproxy_config_t;
