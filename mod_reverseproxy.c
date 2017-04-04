@@ -15,7 +15,7 @@
  *
  * Derived from mod_remoteip.c and mod_cloudflare.c.
  * Credits to cloudflare team and mod_remoteip team.
- *
+ * Modification has been done as per mod_rpaf.c and https://bz.apache.org/bugzilla/show_bug.cgi?id=59829
  */
 
 #include "ap_config.h"
@@ -30,10 +30,14 @@
 #define APR_WANT_BYTEFUNC
 #include "apr_want.h"
 #include "apr_network_io.h"
+#include "mod_ssl.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 module AP_MODULE_DECLARE_DATA reverseproxy_module;
 
 #define AB_DEFAULT_IP_HEADER "X-Real-IP"
+#define AB_DEFAULT_PROTO_HEADER "X-Forwarded-Proto"
 #define AB_DEFAULT_TRUSTED_PROXY {"127.0.0.1"}
 #define AB_DEFAULT_TRUSTED_PROXY_COUNT 1
 
@@ -56,12 +60,17 @@ typedef struct {
      *  with the most commonly encountered listed first
      */
     
-     int  enable_module;
-    
+     int  enable_module;   
     /** 
      * you can trun off or turn on this module by using this directive.
      */
     apr_array_header_t *proxymatch_ip;
+    const char         *orig_scheme;
+    int                orig_port;
+    int                http_port;
+    int                https_port;
+    const char         *https_scheme;
+    const char         *ab_proto;
 } reverseproxy_config_t;
 
 typedef struct {
@@ -79,6 +88,8 @@ typedef struct {
     apr_sockaddr_t proxied_addr;
 } reverseproxy_conn_t;
 
+apr_OFN_ssl_is_https_t *optfn_is_https = NULL ;
+//static APR_OPTIONAL_FN_TYPE(ssl_is_https) *optfn_is_https;
 static apr_status_t set_cf_default_proxies(apr_pool_t *p, reverseproxy_config_t *config);
 
 static void *create_reverseproxy_server_config(apr_pool_t *p, server_rec *s)
@@ -95,7 +106,24 @@ static void *create_reverseproxy_server_config(apr_pool_t *p, server_rec *s)
     }
     config->enable_module = 0;
     config->header_name = AB_DEFAULT_IP_HEADER;
+    config->ab_proto = AB_DEFAULT_PROTO_HEADER;
+    config->orig_port = s->port;
+    /* server_rec->server_scheme only available after 2.2.3 */
+    #if AP_SERVER_MINORVERSION_NUMBER > 1 && AP_SERVER_PATCHLEVEL_NUMBER > 2
+    config->orig_scheme = s->server_scheme;
+    #endif
+    config->https_scheme = apr_pstrdup(p, "https");
+    config->http_port = 80;
+    config->https_port = 443;
+
     return config;
+}
+
+int ssl_is_https(conn_rec *c) {
+    const char* rpaf_https = apr_table_get(c->notes, "rpaf_https");
+
+    return (rpaf_https != NULL && !strcasecmp(rpaf_https, "on")) || (optfn_is_https && optfn_is_https(c));
+
 }
 
 static void *merge_reverseproxy_server_config(apr_pool_t *p, void *globalv,
@@ -232,6 +260,7 @@ static const char *proxies_set(cmd_parms *cmd, void *internal,
 static int reverseproxy_modify_connection(request_rec *r)
 {
     conn_rec *c = r->connection;
+
     reverseproxy_config_t *config = (reverseproxy_config_t *)
         ap_get_module_config(r->server->module_config, &reverseproxy_module);
     if (!config->enable_module)
@@ -251,9 +280,33 @@ static int reverseproxy_modify_connection(request_rec *r)
     char *eos;
     unsigned char *addrbyte;
     void *internal = NULL;
+    const char *scheme;
+    const char *httpsvalue = apr_table_get(r->headers_in, config->ab_proto) ? apr_table_get(r->headers_in, config->ab_proto) : "http";
+    apr_table_t *e = r->subprocess_env;
+
+    if (strcmp(httpsvalue, config->https_scheme) == 0) {
+        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_WARNING, 0, r, "its ssl");
+        apr_table_setn(r->connection->notes, "rpaf_https", "on");
+        apr_table_setn(e, "HTTPS", "on");
+        apr_table_setn(e, "SERVER_PORT", "443");
+        
+        r->server->port = config->https_port;
+        r->parsed_uri.port = r->server->port;
+        scheme = config->https_scheme;
+    }
+    else {
+        apr_table_set(r->connection->notes, "rpaf_https"   , "off");
+        apr_table_set(e, "HTTPS"      , "off");
+        apr_table_set(e, "SERVER_PORT", "80");
+
+        r->server->port = config->orig_port;
+        scheme = config->orig_scheme;
+    }
+    #if AP_SERVER_MINORVERSION_NUMBER > 1 && AP_SERVER_PATCHLEVEL_NUMBER > 2
+    r->server->server_scheme = scheme;
+    #endif
 
     apr_pool_userdata_get((void*)&conn, "mod_reverseproxy-conn", c->pool);
-
     if (conn) {
         if (remote && (strcmp(remote, conn->prior_remote) == 0)) {
             /* TODO: Recycle r-> overrides from previous request
@@ -537,6 +590,7 @@ static void register_hooks(apr_pool_t *p)
     // We need to run very early so as to not trip up mod_security.
     // Hence, this little trick, as mod_security runs at APR_HOOK_REALLY_FIRST.
     ap_hook_post_read_request(reverseproxy_modify_connection, NULL, NULL, APR_HOOK_REALLY_FIRST - 10);
+    APR_REGISTER_OPTIONAL_FN(ssl_is_https);
 }
 
 module AP_MODULE_DECLARE_DATA reverseproxy_module = {
