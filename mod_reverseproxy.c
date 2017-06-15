@@ -285,7 +285,6 @@ static int reverseproxy_modify_connection(request_rec *r)
     apr_table_t *e = r->subprocess_env;
 
     if (strcmp(httpsvalue, config->https_scheme) == 0) {
-        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_WARNING, 0, r, "its ssl");
         apr_table_setn(r->connection->notes, "rpaf_https", "on");
         apr_table_setn(e, "HTTPS", "on");
         apr_table_setn(e, "SERVER_PORT", "443");
